@@ -176,7 +176,7 @@ export function OperationsContent({ tab, onNotice, onSiteSettingsChange, onOwner
   if (tab === 'schedule') return <SchedulePanel onNotice={onNotice} />;
   if (tab === 'time') return <StaffTimePanel onNotice={onNotice} />;
   if (tab === 'timeoff') return <TimeOffPanel onNotice={onNotice} onPendingTimeOffChange={onPendingTimeOffChange} />;
-  if (tab === 'orders') return <OrdersPanel onNotice={onNotice} />;
+  if (tab === 'orders') return <OrdersPanel onNotice={onNotice} onSiteSettingsChange={onSiteSettingsChange} />;
   if (tab === 'account') return <AccountPanel onNotice={onNotice} onOwnerNameChange={onOwnerNameChange} />;
   return <ActivityPanel />;
 }
@@ -195,7 +195,7 @@ function CustomersPanel({ onNotice, onSettingsChange }: { onNotice: (message: st
   function checkAll() { setSelected(new Set(emailCustomers.map((item) => item.id))); }
   function uncheckAll() { setSelected(new Set()); }
   function sendEmail() { const recipients = emailCustomers.filter((item) => selected.has(item.id)); if (recipients.length === 0) { setEmailStatus('Select at least one customer to email.'); return; } const emails = recipients.map((item) => item.email).join(', '); window.location.href = `mailto:${emails}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`; setEmailStatus(`Opened your email app for ${recipients.length} recipient${recipients.length > 1 ? 's' : ''}.`); }
-  return <OpsPanel title="Customer list" intro="Use consent flags to see who agreed to email or text updates. Homepage buttons can be turned on or off here."><div className="site-toggle-card"><strong>Homepage buttons</strong><label><input type="checkbox" checked={settings.join_family_enabled} onChange={() => updateSetting('join_family_enabled')} /> Show Join the Family</label><label><input type="checkbox" checked={settings.online_ordering_enabled ?? false} onChange={() => updateSetting('online_ordering_enabled')} /> Show Order Online button</label></div><div className="email-blast-card"><div className="section-kicker">Email customers</div><h3>Send a message to everyone who opted in</h3><label>Subject<input value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} placeholder="Weekly specials from European's Best" /></label><label>Message<textarea rows={4} value={emailBody} onChange={(event) => setEmailBody(event.target.value)} placeholder="Write your message here..." /></label>{emailStatus && <div className="form-success">{emailStatus}</div>}<button className="button button-primary" onClick={sendEmail} disabled={selected.size === 0}><Send size={16} /> Send to {selected.size} selected</button></div><div className="customer-email-section"><div className="customer-email-header"><div><strong>Email subscribers ({emailCustomers.length})</strong><small>Only customers who opted in to email are listed below.</small></div><div className="check-all-buttons"><button className="button button-outline button-sm" onClick={checkAll}>Check all</button><button className="button button-outline button-sm" onClick={uncheckAll}>Uncheck all</button></div></div><div className="customer-table"><div className="table-head"><span></span><span>Name</span><span>Email</span></div>{emailCustomers.map((item) => <div className="table-row" key={item.id}><label className="consent"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleCustomer(item.id)} /></label><strong>{item.full_name}</strong><span>{item.email}<br />{item.phone || 'No phone'}</span></div>)}{emailCustomers.length === 0 && <Empty title="No email subscribers yet" text="Customers who opt in to email will appear here." />}</div></div><div className="customer-all-section"><div className="section-kicker">All customers</div><div className="customer-table"><div className="table-head"><span>Name</span><span>Contact</span><span>Permission</span></div>{items.map((item) => <div className="table-row" key={item.id}><strong>{item.full_name}</strong><span>{item.email || 'No email'}<br />{item.phone || 'No phone'}</span><span>{item.email_consent && <b className="consent-pill">Email</b>}{item.sms_consent && <b className="consent-pill sms">Text</b>}{!item.email_consent && !item.sms_consent && <small>No outreach</small>}</span></div>)}{items.length === 0 && <Empty title="No customers yet" text="Signups and family requests will build your list here." />}</div></div></OpsPanel>;
+  return <OpsPanel title="Customer list" intro="Use consent flags to see who agreed to email or text updates. Homepage buttons can be turned on or off here."><div className="site-toggle-card"><strong>Homepage buttons</strong><label><input type="checkbox" checked={settings.join_family_enabled} onChange={() => updateSetting('join_family_enabled')} /> Show Join the Family</label></div><div className="email-blast-card"><div className="section-kicker">Email customers</div><h3>Send a message to everyone who opted in</h3><label>Subject<input value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} placeholder="Weekly specials from European's Best" /></label><label>Message<textarea rows={4} value={emailBody} onChange={(event) => setEmailBody(event.target.value)} placeholder="Write your message here..." /></label>{emailStatus && <div className="form-success">{emailStatus}</div>}<button className="button button-primary" onClick={sendEmail} disabled={selected.size === 0}><Send size={16} /> Send to {selected.size} selected</button></div><div className="customer-email-section"><div className="customer-email-header"><div><strong>Email subscribers ({emailCustomers.length})</strong><small>Only customers who opted in to email are listed below.</small></div><div className="check-all-buttons"><button className="button button-outline button-sm" onClick={checkAll}>Check all</button><button className="button button-outline button-sm" onClick={uncheckAll}>Uncheck all</button></div></div><div className="customer-table"><div className="table-head"><span></span><span>Name</span><span>Email</span></div>{emailCustomers.map((item) => <div className="table-row" key={item.id}><label className="consent"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleCustomer(item.id)} /></label><strong>{item.full_name}</strong><span>{item.email}<br />{item.phone || 'No phone'}</span></div>)}{emailCustomers.length === 0 && <Empty title="No email subscribers yet" text="Customers who opt in to email will appear here." />}</div></div><div className="customer-all-section"><div className="section-kicker">All customers</div><div className="customer-table"><div className="table-head"><span>Name</span><span>Contact</span><span>Permission</span></div>{items.map((item) => <div className="table-row" key={item.id}><strong>{item.full_name}</strong><span>{item.email || 'No email'}<br />{item.phone || 'No phone'}</span><span>{item.email_consent && <b className="consent-pill">Email</b>}{item.sms_consent && <b className="consent-pill sms">Text</b>}{!item.email_consent && !item.sms_consent && <small>No outreach</small>}</span></div>)}{items.length === 0 && <Empty title="No customers yet" text="Signups and family requests will build your list here." />}</div></div></OpsPanel>;
 }
 
 function MessagesPanel({ onNotice, onUnreadChange }: { onNotice: (message: string) => void; onUnreadChange?: (count: number) => void }) { const [items, setItems] = useState<{ id: string; full_name: string; email: string; phone: string | null; message: string; status: string; created_at: string }[]>([]); async function load() { const { data } = await supabase.from('contact_messages').select('*').order('created_at', { ascending: false }); setItems(data ?? []); if (onUnreadChange) onUnreadChange(data?.filter((item) => item.status === 'new').length ?? 0); } useEffect(() => { load(); }, []); async function updateStatus(id: string, status: string) { const { error } = await supabase.from('contact_messages').update({ status, updated_at: new Date().toISOString() }).eq('id', id); onNotice(error ? 'Could not update that message.' : 'Message updated.'); if (!error) { setItems(items.map((item) => item.id === id ? { ...item, status } : item)); if (onUnreadChange) onUnreadChange(items.filter((item) => item.id !== id ? item.status === 'new' : status === 'new').length); } } async function deleteMessage(id: string) { if (!window.confirm('Delete this message permanently?')) return; const { error } = await supabase.from('contact_messages').delete().eq('id', id); onNotice(error ? 'Could not delete that message.' : 'Message deleted.'); if (!error) { const remaining = items.filter((item) => item.id !== id); setItems(remaining); if (onUnreadChange) onUnreadChange(remaining.filter((item) => item.status === 'new').length); } } return <OpsPanel title="Contact messages" intro="Read questions and messages sent from the Contact Us page."><div className="inbox-list">{items.map((item) => <article className="inbox-item" key={item.id}><div className="inbox-top"><span className="item-category">{item.status}</span><div className="inbox-top-actions"><select value={item.status} onChange={(event) => updateStatus(item.id, event.target.value)}><option>new</option><option>read</option><option>replied</option><option>archived</option></select><button className="inbox-delete" onClick={() => deleteMessage(item.id)}><Trash2 size={14} /> Delete</button></div></div><h3>{item.full_name}</h3><p>{item.message}</p><div className="inbox-meta"><a href={`mailto:${item.email}`}>{item.email}</a>{item.phone && <a href={`tel:${item.phone}`}>{item.phone}</a>}<span>{new Date(item.created_at).toLocaleString()}</span></div></article>)}{items.length === 0 && <Empty title="No contact messages yet" text="Messages from the website will appear here." />}</div></OpsPanel>; }
@@ -413,15 +413,42 @@ type OrderItem = { menu_item_id: string; item_name: string; item_price: string; 
 type Order = { id: string; customer_name: string; customer_phone: string; customer_email: string; order_type: string; payment_method: string; total_price: number; pickup_date: string | null; notes: string; status: string; created_at: string; order_items?: OrderItemRow[] };
 type OrderItemRow = { id: string; item_name: string; item_price: string; quantity: number };
 
-function OrdersPanel({ onNotice }: { onNotice: (message: string) => void }) {
+function OrdersPanel({ onNotice, onSiteSettingsChange }: { onNotice: (message: string) => void; onSiteSettingsChange: (settings: SiteSettings) => void }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState<string>('all');
+  const [orderingEnabled, setOrderingEnabled] = useState(false);
+  const [notifPhone, setNotifPhone] = useState('');
+  const [notifEmail, setNotifEmail] = useState('');
+  const [phoneInput, setPhoneInput] = useState('');
   async function load() {
-    const { data, error } = await supabase.from('orders').select('*, order_items(id, item_name, item_price, quantity)').order('created_at', { ascending: false });
-    if (error) { onNotice('Could not load orders.'); return; }
-    setOrders(data as unknown as Order[]);
+    const [ordersResult, settingsResult, notifResult] = await Promise.all([
+      supabase.from('orders').select('*, order_items(id, item_name, item_price, quantity)').order('created_at', { ascending: false }),
+      supabase.from('site_settings').select('join_family_enabled,seasonal_nav_enabled,online_ordering_enabled').eq('setting_key', 'main').maybeSingle(),
+      supabase.from('notification_settings').select('notification_phone,notification_email').eq('setting_key', 'main').maybeSingle(),
+    ]);
+    if (ordersResult.data) setOrders(ordersResult.data as unknown as Order[]);
+    if (settingsResult.data) { setOrderingEnabled(settingsResult.data.online_ordering_enabled ?? false); onSiteSettingsChange(settingsResult.data); }
+    if (notifResult.data) { setNotifPhone(notifResult.data.notification_phone ?? ''); setNotifEmail(notifResult.data.notification_email ?? ''); }
   }
   useEffect(() => { load(); }, []);
+  async function toggleOrdering() {
+    const next = !orderingEnabled;
+    const { error } = await supabase.from('site_settings').update({ online_ordering_enabled: next, updated_at: new Date().toISOString() }).eq('setting_key', 'main');
+    onNotice(error ? 'Could not update online ordering.' : next ? 'Online ordering is now live on the website.' : 'Online ordering turned off.');
+    if (!error) { setOrderingEnabled(next); }
+  }
+  async function savePhone() {
+    const cleanPhone = phoneInput.replace(/[^0-9+]/g, '');
+    if (cleanPhone.length < 10) { onNotice('Enter a valid phone number (at least 10 digits).'); return; }
+    const { error } = await supabase.from('notification_settings').upsert({ setting_key: 'main', notification_phone: cleanPhone, updated_at: new Date().toISOString() });
+    onNotice(error ? 'Could not save that phone number.' : 'Notification phone number saved.');
+    if (!error) { setNotifPhone(cleanPhone); setPhoneInput(''); await load(); }
+  }
+  async function removePhone() {
+    const { error } = await supabase.from('notification_settings').update({ notification_phone: null, updated_at: new Date().toISOString() }).eq('setting_key', 'main');
+    onNotice(error ? 'Could not remove that phone number.' : 'Notification phone number removed.');
+    if (!error) { setNotifPhone(''); await load(); }
+  }
   async function updateStatus(id: string, status: string) {
     const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
     onNotice(error ? 'Could not update that order.' : `Order marked ${status}.`);
@@ -435,7 +462,21 @@ function OrdersPanel({ onNotice }: { onNotice: (message: string) => void }) {
   }
   const filtered = filter === 'all' ? orders : orders.filter((o) => o.status === filter);
   const newCount = orders.filter((o) => o.status === 'new').length;
-  return <OpsPanel title="Online orders" intro="See orders placed through the website. Update the status as you prepare and hand off each order.">
+  return <OpsPanel title="Online orders" intro="Turn online ordering on or off, manage where order notifications are sent, and track incoming orders.">
+    <div className="order-settings-card">
+      <div className="order-settings-row">
+        <div><strong>Online ordering</strong><span>{orderingEnabled ? 'Customers can place orders from the website.' : 'Ordering is currently turned off.'}</span></div>
+        <button className={orderingEnabled ? 'toggle on' : 'toggle'} onClick={toggleOrdering}><span /></button>
+      </div>
+    </div>
+    <div className="order-settings-card">
+      <div className="order-settings-row">
+        <div><strong>Order notification phone</strong><span>Text messages with order details are sent to this number when a new order comes in.</span></div>
+      </div>
+      {notifPhone ? <div className="notif-phone-display"><span>{notifPhone}</span><button className="inbox-delete" onClick={removePhone}><Trash2 size={14} /> Remove</button></div> : <p className="muted-copy">No phone number set yet.</p>}
+      <div className="notif-phone-input"><input type="tel" value={phoneInput} onChange={(event) => setPhoneInput(event.target.value)} placeholder="440-555-0123" /><button className="button button-primary button-sm" onClick={savePhone} disabled={!phoneInput.trim()}><Check size={15} /> Save number</button></div>
+      <p className="form-footnote">Requires Twilio to be configured for text messages to send.</p>
+    </div>
     <div className="order-filter-bar">
       <button className={filter === 'all' ? 'order-filter-btn active' : 'order-filter-btn'} onClick={() => setFilter('all')}>All ({orders.length})</button>
       <button className={filter === 'new' ? 'order-filter-btn active' : 'order-filter-btn'} onClick={() => setFilter('new')}>New ({newCount})</button>
