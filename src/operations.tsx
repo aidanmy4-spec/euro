@@ -409,9 +409,9 @@ function TimeOffPanel({ onNotice, onPendingTimeOffChange }: { onNotice: (message
   return <OpsPanel title="Time off requests" intro="See who requested time off, week by week. Approve or deny pending requests."><div className="week-nav-bar"><div className="week-selector"><button className="category-arrow" onClick={() => moveWeek(-1)} aria-label="Previous week"><ChevronLeft size={20} /></button><div><span className="section-kicker">Week of</span><h3>{weekRangeMon(weekStart)}</h3></div><button className="category-arrow" onClick={() => moveWeek(1)} aria-label="Next week"><ChevronRight size={20} /></button></div></div>{pendingRequests.length > 0 && <div className="content-list-card"><div className="list-card-heading"><div><div className="section-kicker">Pending</div><h3>{pendingRequests.length} pending {pendingRequests.length === 1 ? 'request' : 'requests'}</h3></div></div>{pendingRequests.map((item) => <div className="time-off-card" key={item.id}><div className="time-off-info"><strong>{item.staff_members?.[0]?.display_name ?? 'Staff member'}</strong><span>{item.start_date} to {item.end_date}{item.reason ? ` · ${item.reason}` : ''}</span></div><div className="check-all-buttons"><button className="button button-outline button-sm" onClick={() => updateStatus(item.id, 'approved')}>Approve</button><button className="button button-outline button-sm" onClick={() => updateStatus(item.id, 'denied')}>Deny</button></div></div>)}</div>}<div className="content-list-card"><div className="list-card-heading"><div><div className="section-kicker">This week</div><h3>Time off for {weekRangeMon(weekStart)}</h3></div></div>{weekRequests.map((item) => <div className="time-off-card" key={item.id}><div className="time-off-info"><strong>{item.staff_members?.[0]?.display_name ?? 'Staff member'}</strong><span>{item.start_date} to {item.end_date}{item.reason ? ` · ${item.reason}` : ''}</span></div><div className="check-all-buttons"><span className={`time-off-status ${item.status}`}>{item.status}</span><button className="inbox-delete" onClick={() => deleteRequest(item.id)}><Trash2 size={14} /></button></div></div>)}{weekRequests.length === 0 && <Empty title="No time off this week" text="Time off requests for this week will appear here." />}</div></OpsPanel>;
 }
 
-type OrderItem = { menu_item_id: string; item_name: string; item_price: string; quantity: number };
+type OrderItem = { menu_item_id: string; item_name: string; item_price: string; quantity: number; comment: string };
 type Order = { id: string; customer_name: string; customer_phone: string; customer_email: string; order_type: string; payment_method: string; total_price: number; pickup_date: string | null; notes: string; status: string; created_at: string; order_items?: OrderItemRow[] };
-type OrderItemRow = { id: string; item_name: string; item_price: string; quantity: number };
+type OrderItemRow = { id: string; item_name: string; item_price: string; quantity: number; comment?: string };
 
 function OrdersPanel({ onNotice, onSiteSettingsChange }: { onNotice: (message: string) => void; onSiteSettingsChange: (settings: SiteSettings) => void }) {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -491,7 +491,7 @@ function OrdersPanel({ onNotice, onSiteSettingsChange }: { onNotice: (message: s
         <small>{new Date(order.created_at).toLocaleString()}</small>
       </div>
       <div className="order-card-items">
-        {order.order_items?.map((item) => <div className="order-item-row" key={item.id}><span>{item.quantity}x {item.item_name}</span><strong>{item.item_price}</strong></div>)}
+        {order.order_items?.map((item) => <div className="order-item-row" key={item.id}><div><span>{item.quantity}x {item.item_name}</span>{item.comment && <small className="order-item-comment">{item.comment}</small>}</div><strong>{item.item_price}</strong></div>)}
       </div>
       <div className="order-card-footer">
         <div className="order-meta">
@@ -522,6 +522,7 @@ type MenuOption = { id: string; name: string; price: string; category: string };
 
 export function OrderPage({ menuItems, onBack }: { menuItems: MenuOption[]; onBack: () => void }) {
   const [cart, setCart] = useState<Map<string, number>>(new Map());
+  const [comments, setComments] = useState<Record<string, string>>({});
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -532,13 +533,22 @@ export function OrderPage({ menuItems, onBack }: { menuItems: MenuOption[]; onBa
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const categories = [...new Set(menuItems.map((item) => item.category))];
+  const bakeryCategories = ['Bakery'];
+  const menuCategories = [...new Set(menuItems.map((item) => item.category))].filter((c) => !bakeryCategories.includes(c));
+  const categories = orderType === 'bakery' ? bakeryCategories : menuCategories;
   const [activeCategory, setActiveCategory] = useState(categories[0] ?? '');
-  const categoryItems = menuItems.filter((item) => item.category === activeCategory);
+  const effectiveCategory = categories.includes(activeCategory) ? activeCategory : categories[0] ?? '';
+  const categoryItems = menuItems.filter((item) => item.category === effectiveCategory && (orderType === 'bakery' ? bakeryCategories.includes(item.category) : !bakeryCategories.includes(item.category)));
 
+  function switchOrderType(type: 'menu' | 'bakery') {
+    setOrderType(type);
+    const cats = type === 'bakery' ? bakeryCategories : menuCategories;
+    setActiveCategory(cats[0] ?? '');
+  }
   function addToCart(id: string) { setCart(new Map(cart).set(id, (cart.get(id) ?? 0) + 1)); }
-  function removeFromCart(id: string) { const next = new Map(cart); const qty = next.get(id) ?? 0; if (qty <= 1) next.delete(id); else next.set(id, qty - 1); setCart(next); }
-  function clearCart() { setCart(new Map()); }
+  function removeFromCart(id: string) { const next = new Map(cart); const qty = next.get(id) ?? 0; if (qty <= 1) { next.delete(id); const nc = { ...comments }; delete nc[id]; setComments(nc); } else next.set(id, qty - 1); setCart(next); }
+  function clearCart() { setCart(new Map()); setComments({}); }
+  function updateComment(id: string, value: string) { setComments({ ...comments, [id]: value }); }
 
   const cartItems: OrderItem[] = [];
   let total = 0;
@@ -547,7 +557,7 @@ export function OrderPage({ menuItems, onBack }: { menuItems: MenuOption[]; onBa
     if (!item) continue;
     const priceNum = parseFloat(item.price.replace(/[^0-9.]/g, ''));
     if (!isNaN(priceNum)) total += priceNum * qty;
-    cartItems.push({ menu_item_id: id, item_name: item.name, item_price: item.price, quantity: qty });
+    cartItems.push({ menu_item_id: id, item_name: item.name, item_price: item.price, quantity: qty, comment: comments[id] ?? '' });
   }
 
   async function submit(event: FormEvent) {
@@ -560,7 +570,7 @@ export function OrderPage({ menuItems, onBack }: { menuItems: MenuOption[]; onBa
       p_customer_name: name.trim(), p_customer_phone: phone.trim(), p_customer_email: email.trim(),
       p_order_type: orderType, p_payment_method: payment, p_total_price: total,
       p_pickup_date: pickupDate || null, p_notes: notes.trim(),
-      p_items: JSON.stringify(cartItems.map((item) => ({ menu_item_id: item.menu_item_id, item_name: item.item_name, item_price: item.item_price, quantity: item.quantity })))
+      p_items: JSON.stringify(cartItems.map((item) => ({ menu_item_id: item.menu_item_id, item_name: item.item_name, item_price: item.item_price, quantity: item.quantity, comment: item.comment })))
     });
     if (error) { setStatus(`Could not place your order. ${error.message}`); setBusy(false); return; }
     // Try to notify the owner via edge function
@@ -573,7 +583,7 @@ export function OrderPage({ menuItems, onBack }: { menuItems: MenuOption[]; onBa
       });
     } catch { /* SMS notification is best-effort */ }
     setStatus('Your order has been placed! We will see it right away. Pay with ' + (payment === 'check' ? 'check' : 'cash') + ' at pickup.');
-    clearCart(); setName(''); setPhone(''); setEmail(''); setPickupDate(''); setNotes('');
+    clearCart(); setName(''); setPhone(''); setEmail(''); setPickupDate(''); setNotes(''); setComments({});
     setBusy(false);
   }
 
@@ -582,21 +592,30 @@ export function OrderPage({ menuItems, onBack }: { menuItems: MenuOption[]; onBa
     <div className="order-layout">
       <div className="order-menu-side">
         <div className="order-type-toggle">
-          <button className={orderType === 'menu' ? 'selected' : ''} onClick={() => setOrderType('menu')}>Menu items</button>
-          <button className={orderType === 'bakery' ? 'selected' : ''} onClick={() => setOrderType('bakery')}>Bakery</button>
+          <button className={orderType === 'menu' ? 'selected' : ''} onClick={() => switchOrderType('menu')}>Menu items</button>
+          <button className={orderType === 'bakery' ? 'selected' : ''} onClick={() => switchOrderType('bakery')}>Bakery</button>
         </div>
         <div className="order-category-tabs">
-          {categories.map((cat) => <button key={cat} className={activeCategory === cat ? 'selected' : ''} onClick={() => setActiveCategory(cat)}>{cat}</button>)}
+          {categories.map((cat) => <button key={cat} className={effectiveCategory === cat ? 'selected' : ''} onClick={() => setActiveCategory(cat)}>{cat}</button>)}
         </div>
         <div className="order-item-list">
-          {categoryItems.map((item) => <div className="order-menu-item" key={item.id}>
-            <div><h3>{item.name}</h3><strong>{item.price}</strong></div>
-            <div className="order-item-controls">
-              {cart.has(item.id) && <button className="order-qty-btn" onClick={() => removeFromCart(item.id)}>−</button>}
-              {cart.has(item.id) && <span className="order-qty">{cart.get(item.id)}</span>}
-              <button className="order-add-btn" onClick={() => addToCart(item.id)}>Add</button>
-            </div>
-          </div>)}
+          {categoryItems.map((item) => {
+            const inCart = cart.has(item.id);
+            const needsComment = orderType === 'bakery';
+            return <div className="order-menu-item" key={item.id}>
+              <div><h3>{item.name}</h3><strong>{item.price}</strong></div>
+              <div className="order-item-controls">
+                {inCart && <button className="order-qty-btn" onClick={() => removeFromCart(item.id)}>−</button>}
+                {inCart && <span className="order-qty">{cart.get(item.id)}</span>}
+                <button className="order-add-btn" onClick={() => addToCart(item.id)}>Add</button>
+              </div>
+              {needsComment && inCart && <div className="order-item-comment-wrap"><select value={comments[item.id] ?? ''} onChange={(event) => updateComment(item.id, event.target.value)}>
+                <option value="">Tell us what you want (optional)…</option>
+                {item.name === 'Cake' && <><option value="Chocolate cake with chocolate frosting">Chocolate cake with chocolate frosting</option><option value="Chocolate cake with vanilla frosting">Chocolate cake with vanilla frosting</option><option value="Vanilla cake with chocolate frosting">Vanilla cake with chocolate frosting</option><option value="Vanilla cake with vanilla frosting">Vanilla cake with vanilla frosting</option><option value="Red velvet cake with cream cheese frosting">Red velvet cake with cream cheese frosting</option><option value="Carrot cake with cream cheese frosting">Carrot cake with cream cheese frosting</option><option value="Custom — see notes">Custom — see notes</option></>}
+                {item.name === 'Fresh-Baked Pastries' && <><option value="Assorted donuts">Assorted donuts</option><option value="Assorted muffins">Assorted muffins</option><option value="Cinnamon rolls">Cinnamon rolls</option><option value="Croissants">Croissants</option><option value="Danish pastries">Danish pastries</option><option value="Assorted cookies">Assorted cookies</option><option value="Mixed assortment">Mixed assortment</option></>}
+              </select></div>}
+            </div>;
+          })}
           {categoryItems.length === 0 && <p className="muted-copy">No items in this category.</p>}
         </div>
       </div>
@@ -606,7 +625,7 @@ export function OrderPage({ menuItems, onBack }: { menuItems: MenuOption[]; onBa
           <h3>Cart ({cartItems.length})</h3>
           {cartItems.length === 0 && <p className="muted-copy">Add items from the left to start your order.</p>}
           {cartItems.map((item) => <div className="order-cart-row" key={item.menu_item_id}>
-            <span>{item.quantity}x {item.item_name}</span>
+            <div><span>{item.quantity}x {item.item_name}</span>{item.comment && <small className="order-cart-comment">{item.comment}</small>}</div>
             <strong>{item.item_price}</strong>
           </div>)}
           {cartItems.length > 0 && <div className="order-total-row"><span>Total</span><strong>${total.toFixed(2)}</strong></div>}

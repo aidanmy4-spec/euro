@@ -64,9 +64,10 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     // Build the SMS message
-    const itemList = (items || []).map((item: { item_name: string; item_price: string; quantity: number }) =>
-      `  ${item.quantity}x ${item.item_name} (${item.item_price})`
-    ).join("\n");
+    const itemList = (items || []).map((item: { item_name: string; item_price: string; quantity: number; comment?: string }) => {
+      const base = `  ${item.quantity}x ${item.item_name} (${item.item_price})`;
+      return item.comment ? `${base} — ${item.comment}` : base;
+    }).join("\n");
 
     const totalPriceFormatted = `$${Number(order.total_price).toFixed(2)}`;
     const paymentLabel = order.payment_method === "check" ? "Check" : "Cash";
