@@ -1,0 +1,2 @@
+[functions.export-daily-shifts]
+verify_jwt = true
