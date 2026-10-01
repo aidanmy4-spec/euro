@@ -1,5 +1,5 @@
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Check, ChevronLeft, ChevronRight, Clock3, ExternalLink, FileText, Mail, MessageSquare, Pencil, Search, Send, ShieldCheck, Sparkles, Star, Trash2, X } from 'lucide-react';
+import { ArrowRight, Check, ChevronLeft, ChevronRight, Clock3, ExternalLink, FileText, Mail, MessageSquare, Pencil, Plus, Search, Send, ShieldCheck, Sparkles, Star, Trash2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 export type OpsTab = 'customers' | 'messages' | 'promotions' | 'reviews' | 'staff' | 'schedule' | 'time' | 'timeoff' | 'orders' | 'account' | 'activity';
@@ -413,22 +413,29 @@ type OrderItem = { menu_item_id: string; item_name: string; item_price: string; 
 type Order = { id: string; customer_name: string; customer_phone: string; customer_email: string; order_type: string; payment_method: string; total_price: number; pickup_date: string | null; notes: string; status: string; created_at: string; order_items?: OrderItemRow[] };
 type OrderItemRow = { id: string; item_name: string; item_price: string; quantity: number; comment?: string };
 
+type NotifNumber = { id: string; label: string; phone_number: string };
+type TwilioConfig = { enabled: boolean; account_sid: string; auth_token: string; from_number: string };
+
 function OrdersPanel({ onNotice, onSiteSettingsChange }: { onNotice: (message: string) => void; onSiteSettingsChange: (settings: SiteSettings) => void }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState<string>('all');
   const [orderingEnabled, setOrderingEnabled] = useState(false);
-  const [notifPhone, setNotifPhone] = useState('');
-  const [notifEmail, setNotifEmail] = useState('');
-  const [phoneInput, setPhoneInput] = useState('');
+  const [notifNumbers, setNotifNumbers] = useState<NotifNumber[]>([]);
+  const [numLabel, setNumLabel] = useState('');
+  const [numPhone, setNumPhone] = useState('');
+  const [twilio, setTwilio] = useState<TwilioConfig>({ enabled: false, account_sid: '', auth_token: '', from_number: '' });
+  const [twilioStatus, setTwilioStatus] = useState('');
   async function load() {
-    const [ordersResult, settingsResult, notifResult] = await Promise.all([
-      supabase.from('orders').select('*, order_items(id, item_name, item_price, quantity)').order('created_at', { ascending: false }),
+    const [ordersResult, settingsResult, numbersResult, twilioResult] = await Promise.all([
+      supabase.from('orders').select('*, order_items(id, item_name, item_price, quantity, comment)').order('created_at', { ascending: false }),
       supabase.from('site_settings').select('join_family_enabled,seasonal_nav_enabled,online_ordering_enabled').eq('setting_key', 'main').maybeSingle(),
-      supabase.from('notification_settings').select('notification_phone,notification_email').eq('setting_key', 'main').maybeSingle(),
+      supabase.from('order_notification_numbers').select('id,label,phone_number').order('created_at', { ascending: true }),
+      supabase.from('twilio_config').select('enabled,account_sid,auth_token,from_number').eq('setting_key', 'main').maybeSingle(),
     ]);
     if (ordersResult.data) setOrders(ordersResult.data as unknown as Order[]);
     if (settingsResult.data) { setOrderingEnabled(settingsResult.data.online_ordering_enabled ?? false); onSiteSettingsChange(settingsResult.data); }
-    if (notifResult.data) { setNotifPhone(notifResult.data.notification_phone ?? ''); setNotifEmail(notifResult.data.notification_email ?? ''); }
+    if (numbersResult.data) setNotifNumbers(numbersResult.data as NotifNumber[]);
+    if (twilioResult.data) setTwilio(twilioResult.data as TwilioConfig);
   }
   useEffect(() => { load(); }, []);
   async function toggleOrdering() {
@@ -437,17 +444,33 @@ function OrdersPanel({ onNotice, onSiteSettingsChange }: { onNotice: (message: s
     onNotice(error ? 'Could not update online ordering.' : next ? 'Online ordering is now live on the website.' : 'Online ordering turned off.');
     if (!error) { setOrderingEnabled(next); }
   }
-  async function savePhone() {
-    const cleanPhone = phoneInput.replace(/[^0-9+]/g, '');
+  async function addNumber() {
+    const cleanPhone = numPhone.replace(/[^0-9+]/g, '');
     if (cleanPhone.length < 10) { onNotice('Enter a valid phone number (at least 10 digits).'); return; }
-    const { error } = await supabase.from('notification_settings').upsert({ setting_key: 'main', notification_phone: cleanPhone, updated_at: new Date().toISOString() });
-    onNotice(error ? 'Could not save that phone number.' : 'Notification phone number saved.');
-    if (!error) { setNotifPhone(cleanPhone); setPhoneInput(''); await load(); }
+    if (!numLabel.trim()) { onNotice('Enter a name for this number.'); return; }
+    const { error } = await supabase.from('order_notification_numbers').insert({ label: numLabel.trim(), phone_number: cleanPhone });
+    onNotice(error ? 'Could not add that number.' : `${numLabel.trim()} added to notification list.`);
+    if (!error) { setNumLabel(''); setNumPhone(''); await load(); }
   }
-  async function removePhone() {
-    const { error } = await supabase.from('notification_settings').update({ notification_phone: null, updated_at: new Date().toISOString() }).eq('setting_key', 'main');
-    onNotice(error ? 'Could not remove that phone number.' : 'Notification phone number removed.');
-    if (!error) { setNotifPhone(''); await load(); }
+  async function removeNumber(id: string) {
+    const { error } = await supabase.from('order_notification_numbers').delete().eq('id', id);
+    onNotice(error ? 'Could not remove that number.' : 'Notification number removed.');
+    if (!error) await load();
+  }
+  async function saveTwilio() {
+    if (!twilio.account_sid.trim() || !twilio.auth_token.trim() || !twilio.from_number.trim()) { onNotice('Fill in all Twilio fields before saving.'); return; }
+    const { error } = await supabase.from('twilio_config').update({
+      account_sid: twilio.account_sid.trim(), auth_token: twilio.auth_token.trim(), from_number: twilio.from_number.trim(),
+      updated_at: new Date().toISOString(),
+    }).eq('setting_key', 'main');
+    onNotice(error ? 'Could not save Twilio settings.' : 'Twilio settings saved.');
+    if (!error) setTwilioStatus('Saved.');
+  }
+  async function toggleTwilio() {
+    const next = !twilio.enabled;
+    const { error } = await supabase.from('twilio_config').update({ enabled: next, updated_at: new Date().toISOString() }).eq('setting_key', 'main');
+    onNotice(error ? 'Could not toggle Twilio.' : next ? 'Twilio text notifications enabled.' : 'Twilio text notifications disabled.');
+    if (!error) { setTwilio({ ...twilio, enabled: next }); }
   }
   async function updateStatus(id: string, status: string) {
     const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
@@ -462,7 +485,7 @@ function OrdersPanel({ onNotice, onSiteSettingsChange }: { onNotice: (message: s
   }
   const filtered = filter === 'all' ? orders : orders.filter((o) => o.status === filter);
   const newCount = orders.filter((o) => o.status === 'new').length;
-  return <OpsPanel title="Online orders" intro="Turn online ordering on or off, manage where order notifications are sent, and track incoming orders.">
+  return <OpsPanel title="Online orders" intro="Turn online ordering on or off, manage who gets notified, and track incoming orders.">
     <div className="order-settings-card">
       <div className="order-settings-row">
         <div><strong>Online ordering</strong><span>{orderingEnabled ? 'Customers can place orders from the website.' : 'Ordering is currently turned off.'}</span></div>
@@ -471,11 +494,28 @@ function OrdersPanel({ onNotice, onSiteSettingsChange }: { onNotice: (message: s
     </div>
     <div className="order-settings-card">
       <div className="order-settings-row">
-        <div><strong>Order notification phone</strong><span>Text messages with order details are sent to this number when a new order comes in.</span></div>
+        <div><strong>Order notification numbers</strong><span>Text messages with order details are sent to these numbers when a new order comes in.</span></div>
       </div>
-      {notifPhone ? <div className="notif-phone-display"><span>{notifPhone}</span><button className="inbox-delete" onClick={removePhone}><Trash2 size={14} /> Remove</button></div> : <p className="muted-copy">No phone number set yet.</p>}
-      <div className="notif-phone-input"><input type="tel" value={phoneInput} onChange={(event) => setPhoneInput(event.target.value)} placeholder="440-555-0123" /><button className="button button-primary button-sm" onClick={savePhone} disabled={!phoneInput.trim()}><Check size={15} /> Save number</button></div>
-      <p className="form-footnote">Requires Twilio to be configured for text messages to send.</p>
+      {notifNumbers.length === 0 && <p className="muted-copy">No numbers added yet. Add one below.</p>}
+      {notifNumbers.map((num) => <div className="notif-number-row" key={num.id}><div className="notif-number-info"><span className="notif-number-label">{num.label}</span><span className="notif-number-phone">{num.phone_number}</span></div><button className="inbox-delete" onClick={() => removeNumber(num.id)}><Trash2 size={14} /> Remove</button></div>)}
+      <div className="notif-add-number">
+        <input type="text" value={numLabel} onChange={(event) => setNumLabel(event.target.value)} placeholder="Name (e.g. Owner, Kitchen)" />
+        <input type="tel" value={numPhone} onChange={(event) => setNumPhone(event.target.value)} placeholder="440-555-0123" />
+        <button className="button button-primary button-sm" onClick={addNumber} disabled={!numLabel.trim() || !numPhone.trim()}><Plus size={15} /> Add</button>
+      </div>
+    </div>
+    <div className="order-settings-card">
+      <div className="order-settings-row">
+        <div><strong>Twilio text messaging</strong><span>{twilio.enabled ? 'Text notifications are active.' : 'Text notifications are turned off.'}</span></div>
+        <button className={twilio.enabled ? 'toggle on' : 'toggle'} onClick={toggleTwilio} disabled={!twilio.account_sid || !twilio.auth_token || !twilio.from_number}><span /></button>
+      </div>
+      <p className="form-footnote">Twilio is the service that sends the actual text messages. Create an account at twilio.com, get your Account SID, Auth Token, and a phone number, then enter them below.</p>
+      <div className="twilio-form">
+        <label>Account SID<input type="text" value={twilio.account_sid} onChange={(event) => setTwilio({ ...twilio, account_sid: event.target.value })} placeholder="ACxxxxxxxxxxxxxxxxxxxx" /></label>
+        <label>Auth Token<input type="password" value={twilio.auth_token} onChange={(event) => setTwilio({ ...twilio, auth_token: event.target.value })} placeholder="Your Twilio auth token" /></label>
+        <label>From number<input type="tel" value={twilio.from_number} onChange={(event) => setTwilio({ ...twilio, from_number: event.target.value })} placeholder="+14405550123" /></label>
+      </div>
+      <div className="twilio-save-row"><button className="button button-primary button-sm" onClick={saveTwilio} disabled={!twilio.account_sid.trim() || !twilio.auth_token.trim() || !twilio.from_number.trim()}><Check size={15} /> Save Twilio settings</button>{twilioStatus && <span className="form-success-inline">{twilioStatus}</span>}</div>
     </div>
     <div className="order-filter-bar">
       <button className={filter === 'all' ? 'order-filter-btn active' : 'order-filter-btn'} onClick={() => setFilter('all')}>All ({orders.length})</button>

@@ -42,26 +42,30 @@ Deno.serve(async (req: Request) => {
 
     const { data: items, error: itemsError } = await supabase
       .from("order_items")
-      .select("item_name, item_price, quantity")
+      .select("item_name, item_price, quantity, comment")
       .eq("order_id", orderId);
 
     if (itemsError) throw new Error(`Failed to fetch order items: ${itemsError.message}`);
 
-    // Fetch the owner's notification phone number
-    const { data: notifSettings } = await supabase
-      .from("notification_settings")
-      .select("notification_phone")
+    // Fetch all notification phone numbers
+    const { data: notifNumbers } = await supabase
+      .from("order_notification_numbers")
+      .select("label, phone_number")
+      .order("created_at", { ascending: true });
+
+    const phoneNumbers: string[] = (notifNumbers || []).map((n: { label: string; phone_number: string }) => n.phone_number);
+
+    // Fetch Twilio config from the database
+    const { data: twilioConfig } = await supabase
+      .from("twilio_config")
+      .select("account_sid, auth_token, from_number, enabled")
       .eq("setting_key", "main")
       .maybeSingle();
 
-    const ownerPhone = notifSettings?.notification_phone;
-
-    // Also check site_settings for online ordering being enabled
-    const { data: siteSettings } = await supabase
-      .from("site_settings")
-      .select("online_ordering_enabled")
-      .eq("setting_key", "main")
-      .maybeSingle();
+    const twilioAccountSid = twilioConfig?.account_sid || Deno.env.get("TWILIO_ACCOUNT_SID") || "";
+    const twilioAuthToken = twilioConfig?.auth_token || Deno.env.get("TWILIO_AUTH_TOKEN") || "";
+    const twilioFromNumber = twilioConfig?.from_number || Deno.env.get("TWILIO_FROM_NUMBER") || "";
+    const twilioEnabled = twilioConfig?.enabled ?? false;
 
     // Build the SMS message
     const itemList = (items || []).map((item: { item_name: string; item_price: string; quantity: number; comment?: string }) => {
@@ -77,51 +81,60 @@ Deno.serve(async (req: Request) => {
 
     const message = `New ${typeLabel} order from ${order.customer_name}!\n${itemList}\nTotal: ${totalPriceFormatted}\nPayment: ${paymentLabel}\n${pickupStr}\nPhone: ${order.customer_phone}${notesStr}`;
 
-    // Try to send SMS via Twilio if credentials are configured
-    const twilioAccountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
-    const twilioAuthToken = Deno.env.get("TWILIO_AUTH_TOKEN");
-    const twilioFromNumber = Deno.env.get("TWILIO_FROM_NUMBER");
+    const results: Array<{ to: string; sent: boolean; error: string | null }> = [];
+    let anySent = false;
+    let firstError: string | null = null;
 
-    let smsSent = false;
-    let smsError: string | null = null;
+    if (twilioEnabled && twilioAccountSid && twilioAuthToken && twilioFromNumber && phoneNumbers.length > 0) {
+      const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
+      const authHeader = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
 
-    if (twilioAccountSid && twilioAuthToken && twilioFromNumber && ownerPhone) {
-      try {
-        const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
-        const authHeader = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
-        const params = new URLSearchParams();
-        params.append("To", ownerPhone);
-        params.append("From", twilioFromNumber);
-        params.append("Body", message);
+      for (const toNumber of phoneNumbers) {
+        try {
+          const params = new URLSearchParams();
+          params.append("To", toNumber);
+          params.append("From", twilioFromNumber);
+          params.append("Body", message);
 
-        const twilioResp = await fetch(twilioUrl, {
-          method: "POST",
-          headers: {
-            "Authorization": `Basic ${authHeader}`,
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: params.toString(),
-        });
+          const twilioResp = await fetch(twilioUrl, {
+            method: "POST",
+            headers: {
+              "Authorization": `Basic ${authHeader}`,
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: params.toString(),
+          });
 
-        if (twilioResp.ok) {
-          smsSent = true;
-        } else {
-          const errText = await twilioResp.text();
-          smsError = `Twilio error: ${errText}`;
+          if (twilioResp.ok) {
+            results.push({ to: toNumber, sent: true, error: null });
+            anySent = true;
+          } else {
+            const errText = await twilioResp.text();
+            results.push({ to: toNumber, sent: false, error: `Twilio error: ${errText}` });
+            if (!firstError) firstError = `Twilio error: ${errText}`;
+          }
+        } catch (err) {
+          results.push({ to: toNumber, sent: false, error: `Fetch failed: ${err.message}` });
+          if (!firstError) firstError = `Fetch failed: ${err.message}`;
         }
-      } catch (err) {
-        smsError = `Twilio fetch failed: ${err.message}`;
       }
     } else {
-      smsError = "Twilio not configured or owner phone not set";
+      const missing: string[] = [];
+      if (!twilioEnabled) missing.push("Twilio is turned off");
+      if (!twilioAccountSid) missing.push("Account SID not set");
+      if (!twilioAuthToken) missing.push("Auth Token not set");
+      if (!twilioFromNumber) missing.push("From number not set");
+      if (phoneNumbers.length === 0) missing.push("No notification numbers added");
+      firstError = missing.join(", ");
     }
 
     return new Response(
       JSON.stringify({
         success: true,
         order_id: orderId,
-        sms_sent: smsSent,
-        sms_error: smsError,
+        sms_sent: anySent,
+        sms_error: firstError,
+        sms_results: results,
         message_preview: message,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
