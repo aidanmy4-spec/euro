@@ -2,8 +2,8 @@ import { FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Check, ChevronLeft, ChevronRight, Clock3, ExternalLink, FileText, Mail, MessageSquare, Pencil, Search, Send, ShieldCheck, Sparkles, Star, Trash2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-export type OpsTab = 'customers' | 'messages' | 'promotions' | 'reviews' | 'staff' | 'schedule' | 'time' | 'timeoff' | 'account' | 'activity';
-export type SiteSettings = { join_family_enabled: boolean; seasonal_nav_enabled: boolean };
+export type OpsTab = 'customers' | 'messages' | 'promotions' | 'reviews' | 'staff' | 'schedule' | 'time' | 'timeoff' | 'orders' | 'account' | 'activity';
+export type SiteSettings = { join_family_enabled: boolean; seasonal_nav_enabled: boolean; online_ordering_enabled: boolean };
 type Customer = { id: string; full_name: string; email: string | null; phone: string | null; email_consent: boolean; sms_consent: boolean; source: string; created_at: string };
 type Promotion = { id?: string; title: string; message: string; coupon_code: string; starts_at: string; ends_at: string; is_published: boolean };
 type HolidayPage = { id?: string; title: string; slug: string; description: string; image_url: string; is_published: boolean };
@@ -176,25 +176,26 @@ export function OperationsContent({ tab, onNotice, onSiteSettingsChange, onOwner
   if (tab === 'schedule') return <SchedulePanel onNotice={onNotice} />;
   if (tab === 'time') return <StaffTimePanel onNotice={onNotice} />;
   if (tab === 'timeoff') return <TimeOffPanel onNotice={onNotice} onPendingTimeOffChange={onPendingTimeOffChange} />;
+  if (tab === 'orders') return <OrdersPanel onNotice={onNotice} />;
   if (tab === 'account') return <AccountPanel onNotice={onNotice} onOwnerNameChange={onOwnerNameChange} />;
   return <ActivityPanel />;
 }
 
 function CustomersPanel({ onNotice, onSettingsChange }: { onNotice: (message: string) => void; onSettingsChange: (settings: SiteSettings) => void }) {
   const [items, setItems] = useState<Customer[]>([]);
-  const [settings, setSettings] = useState<SiteSettings>({ join_family_enabled: true, seasonal_nav_enabled: true });
+  const [settings, setSettings] = useState<SiteSettings>({ join_family_enabled: true, seasonal_nav_enabled: true, online_ordering_enabled: false });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
   const [emailStatus, setEmailStatus] = useState('');
-  useEffect(() => { Promise.all([supabase.from('customer_contacts').select('*').order('created_at', { ascending: false }), supabase.from('site_settings').select('join_family_enabled,seasonal_nav_enabled').eq('setting_key', 'main').maybeSingle()]).then(([customers, settingsResult]) => { setItems(customers.data ?? []); if (settingsResult.data) { setSettings(settingsResult.data); onSettingsChange(settingsResult.data); } }); }, [onSettingsChange]);
+  useEffect(() => { Promise.all([supabase.from('customer_contacts').select('*').order('created_at', { ascending: false }), supabase.from('site_settings').select('join_family_enabled,seasonal_nav_enabled,online_ordering_enabled').eq('setting_key', 'main').maybeSingle()]).then(([customers, settingsResult]) => { setItems(customers.data ?? []); if (settingsResult.data) { setSettings(settingsResult.data); onSettingsChange(settingsResult.data); } }); }, [onSettingsChange]);
   async function updateSetting(key: keyof SiteSettings) { const next = { ...settings, [key]: !settings[key] }; const { error } = await supabase.from('site_settings').update({ ...next, updated_at: new Date().toISOString() }).eq('setting_key', 'main'); onNotice(error ? 'Could not update that homepage button.' : 'Homepage button updated.'); if (!error) { setSettings(next); onSettingsChange(next); } }
   const emailCustomers = items.filter((item) => item.email_consent && item.email);
   function toggleCustomer(id: string) { const next = new Set(selected); if (next.has(id)) next.delete(id); else next.add(id); setSelected(next); }
   function checkAll() { setSelected(new Set(emailCustomers.map((item) => item.id))); }
   function uncheckAll() { setSelected(new Set()); }
   function sendEmail() { const recipients = emailCustomers.filter((item) => selected.has(item.id)); if (recipients.length === 0) { setEmailStatus('Select at least one customer to email.'); return; } const emails = recipients.map((item) => item.email).join(', '); window.location.href = `mailto:${emails}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`; setEmailStatus(`Opened your email app for ${recipients.length} recipient${recipients.length > 1 ? 's' : ''}.`); }
-  return <OpsPanel title="Customer list" intro="Use consent flags to see who agreed to email or text updates. Homepage buttons can be turned on or off here."><div className="site-toggle-card"><strong>Homepage buttons</strong><label><input type="checkbox" checked={settings.join_family_enabled} onChange={() => updateSetting('join_family_enabled')} /> Show Join the Family</label></div><div className="email-blast-card"><div className="section-kicker">Email customers</div><h3>Send a message to everyone who opted in</h3><label>Subject<input value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} placeholder="Weekly specials from European's Best" /></label><label>Message<textarea rows={4} value={emailBody} onChange={(event) => setEmailBody(event.target.value)} placeholder="Write your message here..." /></label>{emailStatus && <div className="form-success">{emailStatus}</div>}<button className="button button-primary" onClick={sendEmail} disabled={selected.size === 0}><Send size={16} /> Send to {selected.size} selected</button></div><div className="customer-email-section"><div className="customer-email-header"><div><strong>Email subscribers ({emailCustomers.length})</strong><small>Only customers who opted in to email are listed below.</small></div><div className="check-all-buttons"><button className="button button-outline button-sm" onClick={checkAll}>Check all</button><button className="button button-outline button-sm" onClick={uncheckAll}>Uncheck all</button></div></div><div className="customer-table"><div className="table-head"><span></span><span>Name</span><span>Email</span></div>{emailCustomers.map((item) => <div className="table-row" key={item.id}><label className="consent"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleCustomer(item.id)} /></label><strong>{item.full_name}</strong><span>{item.email}<br />{item.phone || 'No phone'}</span></div>)}{emailCustomers.length === 0 && <Empty title="No email subscribers yet" text="Customers who opt in to email will appear here." />}</div></div><div className="customer-all-section"><div className="section-kicker">All customers</div><div className="customer-table"><div className="table-head"><span>Name</span><span>Contact</span><span>Permission</span></div>{items.map((item) => <div className="table-row" key={item.id}><strong>{item.full_name}</strong><span>{item.email || 'No email'}<br />{item.phone || 'No phone'}</span><span>{item.email_consent && <b className="consent-pill">Email</b>}{item.sms_consent && <b className="consent-pill sms">Text</b>}{!item.email_consent && !item.sms_consent && <small>No outreach</small>}</span></div>)}{items.length === 0 && <Empty title="No customers yet" text="Signups and family requests will build your list here." />}</div></div></OpsPanel>;
+  return <OpsPanel title="Customer list" intro="Use consent flags to see who agreed to email or text updates. Homepage buttons can be turned on or off here."><div className="site-toggle-card"><strong>Homepage buttons</strong><label><input type="checkbox" checked={settings.join_family_enabled} onChange={() => updateSetting('join_family_enabled')} /> Show Join the Family</label><label><input type="checkbox" checked={settings.online_ordering_enabled ?? false} onChange={() => updateSetting('online_ordering_enabled')} /> Show Order Online button</label></div><div className="email-blast-card"><div className="section-kicker">Email customers</div><h3>Send a message to everyone who opted in</h3><label>Subject<input value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} placeholder="Weekly specials from European's Best" /></label><label>Message<textarea rows={4} value={emailBody} onChange={(event) => setEmailBody(event.target.value)} placeholder="Write your message here..." /></label>{emailStatus && <div className="form-success">{emailStatus}</div>}<button className="button button-primary" onClick={sendEmail} disabled={selected.size === 0}><Send size={16} /> Send to {selected.size} selected</button></div><div className="customer-email-section"><div className="customer-email-header"><div><strong>Email subscribers ({emailCustomers.length})</strong><small>Only customers who opted in to email are listed below.</small></div><div className="check-all-buttons"><button className="button button-outline button-sm" onClick={checkAll}>Check all</button><button className="button button-outline button-sm" onClick={uncheckAll}>Uncheck all</button></div></div><div className="customer-table"><div className="table-head"><span></span><span>Name</span><span>Email</span></div>{emailCustomers.map((item) => <div className="table-row" key={item.id}><label className="consent"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleCustomer(item.id)} /></label><strong>{item.full_name}</strong><span>{item.email}<br />{item.phone || 'No phone'}</span></div>)}{emailCustomers.length === 0 && <Empty title="No email subscribers yet" text="Customers who opt in to email will appear here." />}</div></div><div className="customer-all-section"><div className="section-kicker">All customers</div><div className="customer-table"><div className="table-head"><span>Name</span><span>Contact</span><span>Permission</span></div>{items.map((item) => <div className="table-row" key={item.id}><strong>{item.full_name}</strong><span>{item.email || 'No email'}<br />{item.phone || 'No phone'}</span><span>{item.email_consent && <b className="consent-pill">Email</b>}{item.sms_consent && <b className="consent-pill sms">Text</b>}{!item.email_consent && !item.sms_consent && <small>No outreach</small>}</span></div>)}{items.length === 0 && <Empty title="No customers yet" text="Signups and family requests will build your list here." />}</div></div></OpsPanel>;
 }
 
 function MessagesPanel({ onNotice, onUnreadChange }: { onNotice: (message: string) => void; onUnreadChange?: (count: number) => void }) { const [items, setItems] = useState<{ id: string; full_name: string; email: string; phone: string | null; message: string; status: string; created_at: string }[]>([]); async function load() { const { data } = await supabase.from('contact_messages').select('*').order('created_at', { ascending: false }); setItems(data ?? []); if (onUnreadChange) onUnreadChange(data?.filter((item) => item.status === 'new').length ?? 0); } useEffect(() => { load(); }, []); async function updateStatus(id: string, status: string) { const { error } = await supabase.from('contact_messages').update({ status, updated_at: new Date().toISOString() }).eq('id', id); onNotice(error ? 'Could not update that message.' : 'Message updated.'); if (!error) { setItems(items.map((item) => item.id === id ? { ...item, status } : item)); if (onUnreadChange) onUnreadChange(items.filter((item) => item.id !== id ? item.status === 'new' : status === 'new').length); } } async function deleteMessage(id: string) { if (!window.confirm('Delete this message permanently?')) return; const { error } = await supabase.from('contact_messages').delete().eq('id', id); onNotice(error ? 'Could not delete that message.' : 'Message deleted.'); if (!error) { const remaining = items.filter((item) => item.id !== id); setItems(remaining); if (onUnreadChange) onUnreadChange(remaining.filter((item) => item.status === 'new').length); } } return <OpsPanel title="Contact messages" intro="Read questions and messages sent from the Contact Us page."><div className="inbox-list">{items.map((item) => <article className="inbox-item" key={item.id}><div className="inbox-top"><span className="item-category">{item.status}</span><div className="inbox-top-actions"><select value={item.status} onChange={(event) => updateStatus(item.id, event.target.value)}><option>new</option><option>read</option><option>replied</option><option>archived</option></select><button className="inbox-delete" onClick={() => deleteMessage(item.id)}><Trash2 size={14} /> Delete</button></div></div><h3>{item.full_name}</h3><p>{item.message}</p><div className="inbox-meta"><a href={`mailto:${item.email}`}>{item.email}</a>{item.phone && <a href={`tel:${item.phone}`}>{item.phone}</a>}<span>{new Date(item.created_at).toLocaleString()}</span></div></article>)}{items.length === 0 && <Empty title="No contact messages yet" text="Messages from the website will appear here." />}</div></OpsPanel>; }
@@ -406,4 +407,190 @@ function TimeOffPanel({ onNotice, onPendingTimeOffChange }: { onNotice: (message
   const weekRequests = requests.filter((item) => !(item.end_date < weekStartIso || item.start_date > weekEndIso));
   const pendingRequests = requests.filter((item) => item.status === 'pending');
   return <OpsPanel title="Time off requests" intro="See who requested time off, week by week. Approve or deny pending requests."><div className="week-nav-bar"><div className="week-selector"><button className="category-arrow" onClick={() => moveWeek(-1)} aria-label="Previous week"><ChevronLeft size={20} /></button><div><span className="section-kicker">Week of</span><h3>{weekRangeMon(weekStart)}</h3></div><button className="category-arrow" onClick={() => moveWeek(1)} aria-label="Next week"><ChevronRight size={20} /></button></div></div>{pendingRequests.length > 0 && <div className="content-list-card"><div className="list-card-heading"><div><div className="section-kicker">Pending</div><h3>{pendingRequests.length} pending {pendingRequests.length === 1 ? 'request' : 'requests'}</h3></div></div>{pendingRequests.map((item) => <div className="time-off-card" key={item.id}><div className="time-off-info"><strong>{item.staff_members?.[0]?.display_name ?? 'Staff member'}</strong><span>{item.start_date} to {item.end_date}{item.reason ? ` · ${item.reason}` : ''}</span></div><div className="check-all-buttons"><button className="button button-outline button-sm" onClick={() => updateStatus(item.id, 'approved')}>Approve</button><button className="button button-outline button-sm" onClick={() => updateStatus(item.id, 'denied')}>Deny</button></div></div>)}</div>}<div className="content-list-card"><div className="list-card-heading"><div><div className="section-kicker">This week</div><h3>Time off for {weekRangeMon(weekStart)}</h3></div></div>{weekRequests.map((item) => <div className="time-off-card" key={item.id}><div className="time-off-info"><strong>{item.staff_members?.[0]?.display_name ?? 'Staff member'}</strong><span>{item.start_date} to {item.end_date}{item.reason ? ` · ${item.reason}` : ''}</span></div><div className="check-all-buttons"><span className={`time-off-status ${item.status}`}>{item.status}</span><button className="inbox-delete" onClick={() => deleteRequest(item.id)}><Trash2 size={14} /></button></div></div>)}{weekRequests.length === 0 && <Empty title="No time off this week" text="Time off requests for this week will appear here." />}</div></OpsPanel>;
+}
+
+type OrderItem = { menu_item_id: string; item_name: string; item_price: string; quantity: number };
+type Order = { id: string; customer_name: string; customer_phone: string; customer_email: string; order_type: string; payment_method: string; total_price: number; pickup_date: string | null; notes: string; status: string; created_at: string; order_items?: OrderItemRow[] };
+type OrderItemRow = { id: string; item_name: string; item_price: string; quantity: number };
+
+function OrdersPanel({ onNotice }: { onNotice: (message: string) => void }) {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [filter, setFilter] = useState<string>('all');
+  async function load() {
+    const { data, error } = await supabase.from('orders').select('*, order_items(id, item_name, item_price, quantity)').order('created_at', { ascending: false });
+    if (error) { onNotice('Could not load orders.'); return; }
+    setOrders(data as unknown as Order[]);
+  }
+  useEffect(() => { load(); }, []);
+  async function updateStatus(id: string, status: string) {
+    const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+    onNotice(error ? 'Could not update that order.' : `Order marked ${status}.`);
+    if (!error) await load();
+  }
+  async function deleteOrder(id: string) {
+    if (!window.confirm('Delete this order permanently?')) return;
+    const { error } = await supabase.from('orders').delete().eq('id', id);
+    onNotice(error ? 'Could not delete that order.' : 'Order deleted.');
+    if (!error) await load();
+  }
+  const filtered = filter === 'all' ? orders : orders.filter((o) => o.status === filter);
+  const newCount = orders.filter((o) => o.status === 'new').length;
+  return <OpsPanel title="Online orders" intro="See orders placed through the website. Update the status as you prepare and hand off each order.">
+    <div className="order-filter-bar">
+      <button className={filter === 'all' ? 'order-filter-btn active' : 'order-filter-btn'} onClick={() => setFilter('all')}>All ({orders.length})</button>
+      <button className={filter === 'new' ? 'order-filter-btn active' : 'order-filter-btn'} onClick={() => setFilter('new')}>New ({newCount})</button>
+      <button className={filter === 'preparing' ? 'order-filter-btn active' : 'order-filter-btn'} onClick={() => setFilter('preparing')}>Preparing</button>
+      <button className={filter === 'ready' ? 'order-filter-btn active' : 'order-filter-btn'} onClick={() => setFilter('ready')}>Ready</button>
+      <button className={filter === 'picked_up' ? 'order-filter-btn active' : 'order-filter-btn'} onClick={() => setFilter('picked_up')}>Picked up</button>
+    </div>
+    {filtered.length === 0 && <Empty title="No orders yet" text="Online orders will appear here once customers start ordering." />}
+    {filtered.map((order) => <div className="order-card" key={order.id}>
+      <div className="order-card-header">
+        <div><strong>{order.customer_name}</strong><span className={`order-status-badge ${order.status}`}>{order.status}</span></div>
+        <small>{new Date(order.created_at).toLocaleString()}</small>
+      </div>
+      <div className="order-card-items">
+        {order.order_items?.map((item) => <div className="order-item-row" key={item.id}><span>{item.quantity}x {item.item_name}</span><strong>{item.item_price}</strong></div>)}
+      </div>
+      <div className="order-card-footer">
+        <div className="order-meta">
+          <span>Total: <strong>${Number(order.total_price).toFixed(2)}</strong></span>
+          <span>Payment: <strong>{order.payment_method === 'check' ? 'Check' : 'Cash'}</strong></span>
+          <span>Type: {order.order_type === 'bakery' ? 'Bakery' : 'Menu'}</span>
+          {order.pickup_date && <span>Pickup: {order.pickup_date}</span>}
+          <span>Phone: {order.customer_phone}</span>
+          {order.customer_email && <span>Email: {order.customer_email}</span>}
+          {order.notes && <span>Notes: {order.notes}</span>}
+        </div>
+        <div className="order-actions">
+          <select value={order.status} onChange={(event) => updateStatus(order.id, event.target.value)}>
+            <option value="new">New</option>
+            <option value="preparing">Preparing</option>
+            <option value="ready">Ready</option>
+            <option value="picked_up">Picked up</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <button className="inbox-delete" onClick={() => deleteOrder(order.id)}><Trash2 size={14} /> Delete</button>
+        </div>
+      </div>
+    </div>)}
+  </OpsPanel>;
+}
+
+type MenuOption = { id: string; name: string; price: string; category: string };
+
+export function OrderPage({ menuItems, onBack }: { menuItems: MenuOption[]; onBack: () => void }) {
+  const [cart, setCart] = useState<Map<string, number>>(new Map());
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [payment, setPayment] = useState<'cash' | 'check'>('cash');
+  const [pickupDate, setPickupDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [orderType, setOrderType] = useState<'menu' | 'bakery'>('menu');
+  const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const categories = [...new Set(menuItems.map((item) => item.category))];
+  const [activeCategory, setActiveCategory] = useState(categories[0] ?? '');
+  const categoryItems = menuItems.filter((item) => item.category === activeCategory);
+
+  function addToCart(id: string) { setCart(new Map(cart).set(id, (cart.get(id) ?? 0) + 1)); }
+  function removeFromCart(id: string) { const next = new Map(cart); const qty = next.get(id) ?? 0; if (qty <= 1) next.delete(id); else next.set(id, qty - 1); setCart(next); }
+  function clearCart() { setCart(new Map()); }
+
+  const cartItems: OrderItem[] = [];
+  let total = 0;
+  for (const [id, qty] of cart) {
+    const item = menuItems.find((m) => m.id === id);
+    if (!item) continue;
+    const priceNum = parseFloat(item.price.replace(/[^0-9.]/g, ''));
+    if (!isNaN(priceNum)) total += priceNum * qty;
+    cartItems.push({ menu_item_id: id, item_name: item.name, item_price: item.price, quantity: qty });
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (cartItems.length === 0) { setStatus('Please add at least one item to your order.'); return; }
+    if (name.trim().length < 2) { setStatus('Please enter your name.'); return; }
+    if (phone.replace(/[^0-9]/g, '').length < 7) { setStatus('Please enter a valid phone number.'); return; }
+    setBusy(true); setStatus('');
+    const { data, error } = await supabase.rpc('submit_order', {
+      p_customer_name: name.trim(), p_customer_phone: phone.trim(), p_customer_email: email.trim(),
+      p_order_type: orderType, p_payment_method: payment, p_total_price: total,
+      p_pickup_date: pickupDate || null, p_notes: notes.trim(),
+      p_items: JSON.stringify(cartItems.map((item) => ({ menu_item_id: item.menu_item_id, item_name: item.item_name, item_price: item.item_price, quantity: item.quantity })))
+    });
+    if (error) { setStatus(`Could not place your order. ${error.message}`); setBusy(false); return; }
+    // Try to notify the owner via edge function
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      await fetch(`${supabaseUrl}/functions/v1/notify-owner-order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ order_id: data }),
+      });
+    } catch { /* SMS notification is best-effort */ }
+    setStatus('Your order has been placed! We will see it right away. Pay with ' + (payment === 'check' ? 'check' : 'cash') + ' at pickup.');
+    clearCart(); setName(''); setPhone(''); setEmail(''); setPickupDate(''); setNotes('');
+    setBusy(false);
+  }
+
+  return <section className="page-section container">
+    <div className="page-heading"><div className="section-kicker">Order ahead</div><h1>Place your order.</h1><p>Pick your items, choose cash or check, and we'll have it ready for pickup.</p></div>
+    <div className="order-layout">
+      <div className="order-menu-side">
+        <div className="order-type-toggle">
+          <button className={orderType === 'menu' ? 'selected' : ''} onClick={() => setOrderType('menu')}>Menu items</button>
+          <button className={orderType === 'bakery' ? 'selected' : ''} onClick={() => setOrderType('bakery')}>Bakery</button>
+        </div>
+        <div className="order-category-tabs">
+          {categories.map((cat) => <button key={cat} className={activeCategory === cat ? 'selected' : ''} onClick={() => setActiveCategory(cat)}>{cat}</button>)}
+        </div>
+        <div className="order-item-list">
+          {categoryItems.map((item) => <div className="order-menu-item" key={item.id}>
+            <div><h3>{item.name}</h3><strong>{item.price}</strong></div>
+            <div className="order-item-controls">
+              {cart.has(item.id) && <button className="order-qty-btn" onClick={() => removeFromCart(item.id)}>−</button>}
+              {cart.has(item.id) && <span className="order-qty">{cart.get(item.id)}</span>}
+              <button className="order-add-btn" onClick={() => addToCart(item.id)}>Add</button>
+            </div>
+          </div>)}
+          {categoryItems.length === 0 && <p className="muted-copy">No items in this category.</p>}
+        </div>
+      </div>
+      <div className="order-cart-side">
+        <div className="order-cart-card">
+          <div className="section-kicker">Your order</div>
+          <h3>Cart ({cartItems.length})</h3>
+          {cartItems.length === 0 && <p className="muted-copy">Add items from the left to start your order.</p>}
+          {cartItems.map((item) => <div className="order-cart-row" key={item.menu_item_id}>
+            <span>{item.quantity}x {item.item_name}</span>
+            <strong>{item.item_price}</strong>
+          </div>)}
+          {cartItems.length > 0 && <div className="order-total-row"><span>Total</span><strong>${total.toFixed(2)}</strong></div>}
+          {cartItems.length > 0 && <button className="text-link" onClick={clearCart}>Clear cart</button>}
+        </div>
+        <form className="order-form-card" onSubmit={submit}>
+          <h3>Your details</h3>
+          <label>Name<input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Your name" /></label>
+          <label>Phone<input required type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="440-555-0123" /></label>
+          <label>Email <span className="muted-label">(optional)</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>
+          <label>Pickup date <span className="muted-label">(optional)</span><input type="date" value={pickupDate} onChange={(event) => setPickupDate(event.target.value)} /></label>
+          <label>Notes <span className="muted-label">(optional)</span><textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Special requests, allergies, etc." /></label>
+          <div className="order-payment-section">
+            <strong>Payment method</strong>
+            <div className="payment-options">
+              <label className={`payment-option ${payment === 'cash' ? 'selected' : ''}`}><input type="radio" name="payment" value="cash" checked={payment === 'cash'} onChange={() => setPayment('cash')} /> Cash</label>
+              <label className={`payment-option ${payment === 'check' ? 'selected' : ''}`}><input type="radio" name="payment" value="check" checked={payment === 'check'} onChange={() => setPayment('check')} /> Check</label>
+            </div>
+          </div>
+          {status && <div className={status.startsWith('Your order') ? 'form-success' : 'form-error'}>{status}</div>}
+          <button className="button button-primary full-button" disabled={busy || cartItems.length === 0}>{busy ? 'Placing order…' : `Place order · ${total.toFixed(2)}`} <Check size={17} /></button>
+          <p className="form-footnote">Pay at pickup. Cash or check only.</p>
+        </form>
+        <button className="text-link form-back" onClick={onBack}>Back to website <ArrowRight size={16} /></button>
+      </div>
+    </div>
+  </section>;
 }

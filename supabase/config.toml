@@ -1,2 +1,5 @@
 [functions.export-daily-shifts]
 verify_jwt = true
+
+[functions.notify-owner-order]
+verify_jwt = false
