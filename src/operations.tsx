@@ -410,7 +410,7 @@ function TimeOffPanel({ onNotice, onPendingTimeOffChange }: { onNotice: (message
 }
 
 type OrderItem = { menu_item_id: string; item_name: string; item_price: string; quantity: number; comment: string };
-type Order = { id: string; customer_name: string; customer_phone: string; customer_email: string; order_type: string; payment_method: string; total_price: number; pickup_date: string | null; notes: string; status: string; created_at: string; order_items?: OrderItemRow[] };
+type Order = { id: string; customer_name: string; customer_phone: string; customer_email: string; order_type: string; payment_method: string; total_price: number; pickup_date: string | null; pickup_time: string | null; notes: string; status: string; created_at: string; order_items?: OrderItemRow[] };
 type OrderItemRow = { id: string; item_name: string; item_price: string; quantity: number; comment?: string };
 
 type NotifNumber = { id: string; label: string; phone_number: string };
@@ -538,7 +538,7 @@ function OrdersPanel({ onNotice, onSiteSettingsChange }: { onNotice: (message: s
           <span>Total: <strong>${Number(order.total_price).toFixed(2)}</strong></span>
           <span>Payment: <strong>{order.payment_method === 'check' ? 'Check' : 'Cash'}</strong></span>
           <span>Type: {order.order_type === 'bakery' ? 'Bakery' : 'Menu'}</span>
-          {order.pickup_date && <span>Pickup: {order.pickup_date}</span>}
+          {order.pickup_date && <span>Pickup: {order.pickup_date}{order.pickup_time ? ` at ${order.pickup_time}` : ''}</span>}
           <span>Phone: {order.customer_phone}</span>
           {order.customer_email && <span>Email: {order.customer_email}</span>}
           {order.notes && <span>Notes: {order.notes}</span>}
@@ -568,6 +568,7 @@ export function OrderPage({ menuItems, onBack }: { menuItems: MenuOption[]; onBa
   const [email, setEmail] = useState('');
   const [payment, setPayment] = useState<'cash' | 'check'>('cash');
   const [pickupDate, setPickupDate] = useState('');
+  const [pickupTime, setPickupTime] = useState('');
   const [notes, setNotes] = useState('');
   const [orderType, setOrderType] = useState<'menu' | 'bakery'>('menu');
   const [status, setStatus] = useState('');
@@ -609,7 +610,7 @@ export function OrderPage({ menuItems, onBack }: { menuItems: MenuOption[]; onBa
     const { data, error } = await supabase.rpc('submit_order', {
       p_customer_name: name.trim(), p_customer_phone: phone.trim(), p_customer_email: email.trim(),
       p_order_type: orderType, p_payment_method: payment, p_total_price: total,
-      p_pickup_date: pickupDate || null, p_notes: notes.trim(),
+      p_pickup_date: pickupDate || null, p_pickup_time: pickupTime || '', p_notes: notes.trim(),
       p_items: JSON.stringify(cartItems.map((item) => ({ menu_item_id: item.menu_item_id, item_name: item.item_name, item_price: item.item_price, quantity: item.quantity, comment: item.comment })))
     });
     if (error) { setStatus(`Could not place your order. ${error.message}`); setBusy(false); return; }
@@ -623,7 +624,7 @@ export function OrderPage({ menuItems, onBack }: { menuItems: MenuOption[]; onBa
       });
     } catch { /* SMS notification is best-effort */ }
     setStatus('Your order has been placed! We will see it right away. Pay with ' + (payment === 'check' ? 'check' : 'cash') + ' at pickup.');
-    clearCart(); setName(''); setPhone(''); setEmail(''); setPickupDate(''); setNotes(''); setComments({});
+    clearCart(); setName(''); setPhone(''); setEmail(''); setPickupDate(''); setPickupTime(''); setNotes(''); setComments({});
     setBusy(false);
   }
 
@@ -650,7 +651,7 @@ export function OrderPage({ menuItems, onBack }: { menuItems: MenuOption[]; onBa
                 <button className="order-add-btn" onClick={() => addToCart(item.id)}>Add</button>
               </div>
               {needsComment && inCart && <div className="order-item-comment-wrap"><select value={comments[item.id] ?? ''} onChange={(event) => updateComment(item.id, event.target.value)}>
-                <option value="">Tell us what you want (optional)…</option>
+                <option value="">Tell us what you want…</option>
                 {item.name === 'Cake' && <><option value="Chocolate cake with chocolate frosting">Chocolate cake with chocolate frosting</option><option value="Chocolate cake with vanilla frosting">Chocolate cake with vanilla frosting</option><option value="Vanilla cake with chocolate frosting">Vanilla cake with chocolate frosting</option><option value="Vanilla cake with vanilla frosting">Vanilla cake with vanilla frosting</option><option value="Red velvet cake with cream cheese frosting">Red velvet cake with cream cheese frosting</option><option value="Carrot cake with cream cheese frosting">Carrot cake with cream cheese frosting</option><option value="Custom — see notes">Custom — see notes</option></>}
                 {item.name === 'Fresh-Baked Pastries' && <><option value="Assorted donuts">Assorted donuts</option><option value="Assorted muffins">Assorted muffins</option><option value="Cinnamon rolls">Cinnamon rolls</option><option value="Croissants">Croissants</option><option value="Danish pastries">Danish pastries</option><option value="Assorted cookies">Assorted cookies</option><option value="Mixed assortment">Mixed assortment</option></>}
               </select></div>}
@@ -676,7 +677,13 @@ export function OrderPage({ menuItems, onBack }: { menuItems: MenuOption[]; onBa
           <label>Name<input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Your name" /></label>
           <label>Phone<input required type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="440-555-0123" /></label>
           <label>Email <span className="muted-label">(optional)</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>
-          <label>Pickup date <span className="muted-label">(optional)</span><input type="date" value={pickupDate} onChange={(event) => setPickupDate(event.target.value)} /></label>
+          <div className="pickup-datetime-row">
+            <label>Pickup date <span className="muted-label">(optional)</span><input type="date" value={pickupDate} onChange={(event) => setPickupDate(event.target.value)} /></label>
+            <label>Pickup time <span className="muted-label">(optional)</span><select value={pickupTime} onChange={(event) => setPickupTime(event.target.value)}>
+              <option value="">Select a time…</option>
+              <option value="7:00 AM">7:00 AM</option><option value="7:30 AM">7:30 AM</option><option value="8:00 AM">8:00 AM</option><option value="8:30 AM">8:30 AM</option><option value="9:00 AM">9:00 AM</option><option value="9:30 AM">9:30 AM</option><option value="10:00 AM">10:00 AM</option><option value="10:30 AM">10:30 AM</option><option value="11:00 AM">11:00 AM</option><option value="11:30 AM">11:30 AM</option><option value="12:00 PM">12:00 PM</option><option value="12:30 PM">12:30 PM</option><option value="1:00 PM">1:00 PM</option><option value="1:30 PM">1:30 PM</option><option value="2:00 PM">2:00 PM</option><option value="2:30 PM">2:30 PM</option><option value="3:00 PM">3:00 PM</option><option value="3:30 PM">3:30 PM</option><option value="4:00 PM">4:00 PM</option><option value="4:30 PM">4:30 PM</option><option value="5:00 PM">5:00 PM</option><option value="5:30 PM">5:30 PM</option><option value="6:00 PM">6:00 PM</option><option value="6:30 PM">6:30 PM</option><option value="7:00 PM">7:00 PM</option>
+            </select></label>
+          </div>
           <label>Notes <span className="muted-label">(optional)</span><textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Special requests, allergies, etc." /></label>
           <div className="order-payment-section">
             <strong>Payment method</strong>

@@ -29,7 +29,7 @@ Deno.serve(async (req: Request) => {
     // Fetch the order with its items
     const { data: order, error: orderError } = await supabase
       .from("orders")
-      .select("id, customer_name, customer_phone, order_type, payment_method, total_price, pickup_date, notes, created_at")
+      .select("id, customer_name, customer_phone, order_type, payment_method, total_price, pickup_date, pickup_time, notes, created_at")
       .eq("id", orderId)
       .maybeSingle();
 
@@ -76,7 +76,7 @@ Deno.serve(async (req: Request) => {
     const totalPriceFormatted = `$${Number(order.total_price).toFixed(2)}`;
     const paymentLabel = order.payment_method === "check" ? "Check" : "Cash";
     const typeLabel = order.order_type === "bakery" ? "Bakery" : "Menu";
-    const pickupStr = order.pickup_date ? `Pickup: ${order.pickup_date}` : "Pickup: ASAP";
+    const pickupStr = order.pickup_date ? `Pickup: ${order.pickup_date}${order.pickup_time ? ` at ${order.pickup_time}` : ''}` : "Pickup: ASAP";
     const notesStr = order.notes ? `\nNotes: ${order.notes}` : "";
 
     const message = `New ${typeLabel} order from ${order.customer_name}!\n${itemList}\nTotal: ${totalPriceFormatted}\nPayment: ${paymentLabel}\n${pickupStr}\nPhone: ${order.customer_phone}${notesStr}`;
