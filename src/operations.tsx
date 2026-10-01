@@ -225,7 +225,7 @@ function StaffPanel({ onNotice }: { onNotice: (message: string) => void }) {
   const totalPages = Math.ceil(staff.length / perPage);
   const pageStaff = staff.slice(page * perPage, page * perPage + perPage);
   function movePage(direction: number) { setPage((idx) => Math.max(0, Math.min(totalPages - 1, idx + direction))); }
-  async function addStaff() { const { data, error } = await supabase.rpc('create_staff_member', { p_name: name, p_role: role, p_pin: pin }); onNotice(error ? 'Could not add that staff member.' : 'Staff member added and active.'); if (!error && data) { const updated = [...staff, { ...data, can_view_calendar: true }].sort((a, b) => a.display_name.localeCompare(b.display_name)); setStaff(updated); } setName(''); setPin(''); }
+  async function addStaff() { const { data, error } = await supabase.rpc('create_staff_member', { p_name: name, p_role: role, p_pin: pin }); onNotice(error ? `Could not add that staff member. ${error.message}` : 'Staff member added and active.'); if (!error && data) { const updated = [...staff, { ...data, can_view_calendar: true }].sort((a, b) => a.display_name.localeCompare(b.display_name)); setStaff(updated); } setName(''); setPin(''); }
   async function toggleActive(item: Staff) { const { error } = await supabase.from('staff_members').update({ is_active: !item.is_active }).eq('id', item.id); if (!error) setStaff(staff.map((existing) => existing.id === item.id ? { ...existing, is_active: !existing.is_active } : existing)); }
   async function removeStaff(item: Staff) { if (!window.confirm(`Permanently delete ${item.display_name} and all their time entries, schedules, and time-off requests? This cannot be undone.`)) return; const { error } = await supabase.rpc('owner_delete_staff_member', { p_staff_id: item.id }); onNotice(error ? 'Could not delete that staff member.' : `${item.display_name} deleted and all their data removed.`); if (!error) setStaff(staff.filter((existing) => existing.id !== item.id)); }
   async function toggleAllSchedule() { const next = !allCanViewCalendar; const { error } = await supabase.from('staff_members').update({ can_view_calendar: next }).in('id', staff.map((item) => item.id)); onNotice(error ? 'Could not update schedule access.' : next ? 'All staff can view the schedule.' : 'Schedule view turned off for all staff.'); if (!error) { setStaff(staff.map((item) => ({ ...item, can_view_calendar: next }))); setAllCanViewCalendar(next); } }
@@ -263,7 +263,7 @@ function SchedulePanel({ onNotice }: { onNotice: (message: string) => void }) {
     const endDateVal = endDate || startDate;
     const ids = Array.from(selectedStaff);
     const { data, error } = await supabase.rpc('owner_save_schedule', { p_staff_ids: ids, p_start_date: startDate, p_end_date: endDateVal, p_start_time: start, p_end_time: end, p_notes: notes });
-    onNotice(error ? 'Could not save those shifts.' : `Saved ${data ?? 0} shift(s).`);
+    onNotice(error ? `Could not save those shifts. ${error.message}` : `Saved ${data ?? 0} shift(s).`);
     if (!error) { setNotes(''); setSelectedStaff(new Set()); await load(); }
   }
 
@@ -272,7 +272,7 @@ function SchedulePanel({ onNotice }: { onNotice: (message: string) => void }) {
   async function saveEdit() {
     if (!editing) return;
     const { error } = await supabase.rpc('owner_update_schedule', { p_schedule_id: editing.id, p_start_time: editing.start_time, p_end_time: editing.end_time, p_notes: editing.notes });
-    onNotice(error ? 'Could not update that shift.' : 'Shift updated.');
+    onNotice(error ? `Could not update that shift. ${error.message}` : 'Shift updated.');
     if (!error) { setEditing(null); await load(); }
   }
 
